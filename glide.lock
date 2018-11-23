@@ -1,0 +1,10 @@
+hash: 3dd274607a426fd447ee350bcb4c9e723bc7b197edc9aa8f051b564af23b292d
+updated: 2018-11-23T16:16:57.487001+01:00
+imports:
+- name: github.com/roman-kachanovsky/go-binary-pack
+  version: e260e0dc6732c539c89b612581dadd192f0be4ed
+  subpackages:
+  - binary-pack
+- name: github.com/snksoft/crc
+  version: 03404db21ad4e7182edf4843b51f6252799f7140
+testImports: []

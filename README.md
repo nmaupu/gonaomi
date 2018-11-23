@@ -1,2 +1,7 @@
-# gonaomi
-Command line tool to run Naomi games written in Go
+# GoNaomi
+
+Command line tool to run Sega Naomi games written in Go.
+
+# Thanks
+
+This work is heavily based on *triforce tool scripts*.

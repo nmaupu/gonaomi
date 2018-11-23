@@ -1,0 +1,5 @@
+package: github.com/nmaupu/gonaomi
+import:
+- package: github.com/roman-kachanovsky/go-binary-pack
+  subpackages:
+  - binary-pack
