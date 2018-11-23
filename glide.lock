@@ -1,10 +1,18 @@
 hash: 3dd274607a426fd447ee350bcb4c9e723bc7b197edc9aa8f051b564af23b292d
-updated: 2018-11-23T16:16:57.487001+01:00
+updated: 2018-11-23T17:31:16.472895+01:00
 imports:
+- name: github.com/jawher/mow.cli
+  version: 2f22195f169da29d54624afd9eb83ada5c9e4ee9
+  subpackages:
+  - internal/container
+  - internal/flow
+  - internal/fsm
+  - internal/lexer
+  - internal/matcher
+  - internal/parser
+  - internal/values
 - name: github.com/roman-kachanovsky/go-binary-pack
   version: e260e0dc6732c539c89b612581dadd192f0be4ed
   subpackages:
   - binary-pack
-- name: github.com/snksoft/crc
-  version: 03404db21ad4e7182edf4843b51f6252799f7140
 testImports: []

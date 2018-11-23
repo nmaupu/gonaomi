@@ -1,25 +1,35 @@
 BIN=bin
 BIN_NAME=gonaomi
 
-all: build
+all: darwin
 
 fmt:
 	go fmt ./...
 
-build: bin
-	env CGO_ENABLED=0 go build -o $(BIN)/$(BIN_NAME)
-
 install:
 	env CGO_ENABLED=0 go install
+
+vendor:
+	glide install -v --strip-vcs
+
+build: vendor $(BIN) $(shell find . -name "*.go")
+	env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o $(BIN)/$(BIN_NAME) .
+
+darwin: vendor $(BIN) $(shell find . -name "*.go")
+	env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o $(BIN)/$(BIN_NAME)-darwin .
+
+freebsd: vendor $(BIN) $(shell find . -name "*.go")
+	env CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o $(BIN)/$(BIN_NAME)-freebsd .
 
 clean:
 	go clean -i
 	rm -rf $(BIN)
+	rm -rf vendor
 
 test:
 	go test -v ./...
 
-bin:
+$(BIN):
 	mkdir -p $(BIN)
 
-.PHONY: fmt install clean test all release
+.PHONY: fmt install clean test all release build darwin freebsd

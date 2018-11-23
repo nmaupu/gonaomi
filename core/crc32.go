@@ -1,3 +1,4 @@
+// Based on https://github.com/JanekvO/naomi_netboot_upload/blob/master/crc32.c
 package core
 
 import ()
