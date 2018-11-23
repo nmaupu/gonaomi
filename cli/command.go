@@ -6,9 +6,7 @@ import (
 	"github.com/jawher/mow.cli"
 	"github.com/nmaupu/gonaomi/core"
 	"log"
-	"net"
 	"os"
-	"strconv"
 	"syscall"
 	"time"
 )
@@ -75,37 +73,29 @@ func execute() {
 
 	fmt.Println("Welcome to GoNaomi")
 
-	strAddr := net.JoinHostPort(*ip, strconv.Itoa(*port))
-	fmt.Println("Connecting to", strAddr, "...")
-	conn, err := net.Dial("tcp4", strAddr)
-	if err != nil || conn == nil {
-		log.Fatalln(err)
-	}
-	defer conn.Close()
+	naomi := core.NewNaomi(*ip, *port)
+	defer naomi.Close()
 
-	fmt.Println("Connected to", strAddr)
-
-	phase1(conn)
-	//phase2(conn, *filename)
-	//phase3(conn)
+	//phase1(&naomi)
+	phase2(&naomi, *filename)
+	phase3(&naomi)
 }
 
-func phase1(conn net.Conn) {
-	core.HOST_SetMode(conn, 0, 1)
-	core.SECURITY_SetKeycode(conn)
+func phase1(n *core.Naomi) {
+	n.HOST_SetMode(0, 1)
+	n.SECURITY_SetKeycode()
 }
 
-func phase2(conn net.Conn, filename string) {
-	core.DIMM_UploadFile(conn, filename)
-	core.HOST_Restart(conn)
-
+func phase2(n *core.Naomi, filename string) {
+	n.DIMM_UploadFile(filename)
+	n.HOST_Restart()
 }
 
-func phase3(conn net.Conn) {
+func phase3(n *core.Naomi) {
 	//loop
 	log.Println("Entering time limit hack loop...")
 	for {
-		core.TIME_SetLimit(conn, 10*60*1000)
+		n.TIME_SetLimit(10 * 60 * 1000)
 		time.Sleep(5000 * time.Millisecond)
 	}
 }

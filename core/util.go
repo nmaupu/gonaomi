@@ -7,35 +7,78 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 )
 
-// Reads n bytes from a given socket
-func ReadSocket(conn net.Conn, n int) (string, error) {
-	buf := make([]byte, n)
+type Naomi struct {
+	Addr       string
+	Connection net.Conn
+}
 
-	nb, err := conn.Read(buf)
+func NewNaomi(addr string, port int) Naomi {
+	strAddr := net.JoinHostPort(addr, strconv.Itoa(port))
+	n := Naomi{Addr: strAddr}
+
+	log.Printf("Connecting to Naomi at %s...\n", n.Addr)
+	c, err := net.Dial("tcp4", n.Addr)
+	if err != nil || c == nil {
+		log.Fatalln(err)
+	}
+
+	n.Connection = c
+
+	log.Printf("Connected to %s\n", n.Addr)
+
+	return n
+}
+
+func (n Naomi) Close() {
+	n.Connection.Close()
+}
+
+// Reads nb bytes from a given socket
+func (n Naomi) ReadSocket(nb int) (string, error) {
+	buf := make([]byte, nb)
+
+	nbRet, err := n.Connection.Read(buf)
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s", buf[:nb]), nil
+	return fmt.Sprintf("%s", buf[:nbRet]), nil
 }
 
-func HOST_SetMode(conn net.Conn, v_and, v_or int) string {
+func (n Naomi) WritePacket(format []string, values []interface{}, additionalData []byte) error {
+	bp := new(bp.BinaryPack)
+	data, err := bp.Pack(format, values)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Writing %x...\n", data)
+
+	if additionalData != nil {
+		data = append(data, additionalData...)
+	}
+
+	_, err = n.Connection.Write(data)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
+
+func (n Naomi) HOST_SetMode(v_and, v_or int) string {
 	f := []string{"I", "I"}
 	v := []interface{}{0x07000004, ((v_and << 8) | v_or)}
 
-	bp := new(bp.BinaryPack)
-	data, err := bp.Pack(f, v)
-
-	log.Println("Writing", data)
-	_, err = conn.Write(data)
+	err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Finished")
 
-	ret, err := ReadSocket(conn, 0x8)
+	ret, err := n.ReadSocket(0x8)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -43,24 +86,21 @@ func HOST_SetMode(conn net.Conn, v_and, v_or int) string {
 	return ret
 }
 
-func SECURITY_SetKeycode(conn net.Conn) {
+func (n Naomi) SECURITY_SetKeycode() {
 	f := []string{"I", "I", "I", "I", "I", "I", "I", "I", "I"}
 	v := []interface{}{0x7F000008, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
-	bp := new(bp.BinaryPack)
-	data, err := bp.Pack(f, v)
-
-	log.Println("Writing", data)
-	_, err = conn.Write(data)
+	err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Finished")
 }
 
-func DIMM_UploadFile(conn net.Conn, filename string) {
+func (n Naomi) DIMM_UploadFile(filename string) {
 	addr := uint32(0)
 	crc := uint32(0)
+
+	log.Printf("Sending %s...\n", filename)
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -68,89 +108,63 @@ func DIMM_UploadFile(conn net.Conn, filename string) {
 	}
 	defer file.Close()
 
+	data := make([]byte, 0x8000)
 	for {
-		data := make([]byte, 0x8000)
-		n, err := file.ReadAt(data, int64(addr))
+		nb, err := file.ReadAt(data, int64(addr))
 		if err == io.EOF {
 			break
 		}
 
-		DIMM_Upload(conn, addr, data[:n], 0)
+		n.DIMM_Upload(addr, data[:nb], 0)
 
-		crc = CRC32(crc, data[:n])
-		addr += uint32(n)
+		crc = CRC32(crc, data[:nb])
+		addr += uint32(nb)
 	}
 
-	DIMM_Upload(conn, addr, []byte("12345678"), 1)
+	n.DIMM_Upload(addr, []byte("12345678"), 1)
 
 	crc = ^crc
-	fmt.Printf("CRC to send: %x\n", crc)
-	DIMM_SetInformation(conn, crc, addr)
+	log.Printf("CRC to send: %x\n", crc)
+	n.DIMM_SetInformation(crc, addr)
 }
 
-func DIMM_Upload(conn net.Conn, addr uint32, d []byte, mark int) {
+func (n Naomi) DIMM_Upload(addr uint32, d []byte, mark int) {
 	f := []string{"I", "I", "I", "H"}
 	v := []interface{}{0x04800000 | (len(d) + 0xA) | (mark << 16), 0, int(addr), 0}
 
-	bp := new(bp.BinaryPack)
-	data, err := bp.Pack(f, v)
-	log.Println("pack content=", data)
-	data = append(data, d...)
-
-	log.Println("Writing data...")
-	_, err = conn.Write(data)
+	err := n.WritePacket(f, v, d)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Finished")
 }
 
-func DIMM_SetInformation(conn net.Conn, crc uint32, length uint32) {
+func (n Naomi) DIMM_SetInformation(crc uint32, length uint32) {
 	f := []string{"I", "I", "I", "I"}
 	v := []interface{}{0x1900000C, int(crc) & 0xFFFFFFFF, int(length), 0}
 
-	fmt.Printf("Length=%08x\n", length)
-	fmt.Printf("CRC=%x\n", crc)
-	bp := new(bp.BinaryPack)
-	data, err := bp.Pack(f, v)
+	log.Printf("Length=%08x\n", length)
+	log.Printf("CRC=%x\n", crc)
 
-	log.Println("Writing", data)
-	_, err = conn.Write(data)
+	err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Finished")
 }
 
-func HOST_Restart(conn net.Conn) {
+func (n Naomi) HOST_Restart() {
 	f := []string{"I"}
 	v := []interface{}{0x0A000000}
 
-	bp := new(bp.BinaryPack)
-	data, err := bp.Pack(f, v)
-
-	log.Println("Writing", data)
-	_, err = conn.Write(data)
+	err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Finished")
 }
 
-//func computeCRC32(data []byte, crc uint32) uint32 {
-//	c := crc32.ChecksumIEEE(data)
-//	return c
-//}
-
-func TIME_SetLimit(conn net.Conn, lim int) {
+func (n Naomi) TIME_SetLimit(lim int) {
 	f := []string{"I", "I"}
 	v := []interface{}{0x17000004, lim}
 
-	bp := new(bp.BinaryPack)
-	data, _ := bp.Pack(f, v)
-
-	log.Println("Writing", data)
-	_, _ = conn.Write(data)
-	// Ignoring error
-	log.Println("Finished")
+	// Writing packet ignoring errors
+	n.WritePacket(f, v, nil)
 }
