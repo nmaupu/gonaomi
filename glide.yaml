@@ -1,5 +1,11 @@
 package: github.com/nmaupu/gonaomi
 import:
+- package: github.com/jawher/mow.cli
+  version: ^1.0.4
 - package: github.com/roman-kachanovsky/go-binary-pack
   subpackages:
   - binary-pack
+- package: github.com/vbauerster/mpb
+  version: ^3.3.2
+  subpackages:
+  - decor

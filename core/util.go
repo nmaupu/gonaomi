@@ -3,11 +3,19 @@ package core
 import (
 	"fmt"
 	bp "github.com/roman-kachanovsky/go-binary-pack/binary-pack"
+	"github.com/vbauerster/mpb"
+	"github.com/vbauerster/mpb/decor"
 	"io"
 	"log"
 	"net"
 	"os"
 	"strconv"
+	"time"
+)
+
+const (
+	CONNECT_TIMEOUT = 5
+	WRITE_TIMEOUT   = 10
 )
 
 type Naomi struct {
@@ -20,7 +28,7 @@ func NewNaomi(addr string, port int) Naomi {
 	n := Naomi{Addr: strAddr}
 
 	log.Printf("Connecting to Naomi at %s...\n", n.Addr)
-	c, err := net.Dial("tcp4", n.Addr)
+	c, err := net.DialTimeout("tcp4", n.Addr, time.Duration(CONNECT_TIMEOUT*time.Second))
 	if err != nil || c == nil {
 		log.Fatalln(err)
 	}
@@ -36,6 +44,13 @@ func (n Naomi) Close() {
 	n.Connection.Close()
 }
 
+// Check wether Naomi board is up or down (check its TCP connectivity)
+func (n Naomi) IsUp() bool {
+	conn, err := net.Dial("tcp4", n.Addr)
+	defer conn.Close()
+	return err != nil
+}
+
 // Reads nb bytes from a given socket
 func (n Naomi) ReadSocket(nb int) (string, error) {
 	buf := make([]byte, nb)
@@ -48,32 +63,41 @@ func (n Naomi) ReadSocket(nb int) (string, error) {
 	return fmt.Sprintf("%s", buf[:nbRet]), nil
 }
 
-func (n Naomi) WritePacket(format []string, values []interface{}, additionalData []byte) error {
+func (n Naomi) WritePacket(format []string, values []interface{}, additionalData []byte) (int, error) {
+	nbWrite := -1
+
 	bp := new(bp.BinaryPack)
 	data, err := bp.Pack(format, values)
 	if err != nil {
-		return err
+		return nbWrite, err
 	}
 
-	log.Printf("Writing %x...\n", data)
+	//log.Printf("Writing %x...\n", data)
 
 	if additionalData != nil {
 		data = append(data, additionalData...)
 	}
 
-	_, err = n.Connection.Write(data)
-	if err != nil {
-		return err
+	// Looping while timeout is not reached
+	err = nil
+	for i := 0; i < WRITE_TIMEOUT; i++ {
+		nbWrite, err = n.Connection.Write(data)
+		if err == nil {
+			break
+		}
+
+		log.Println("Retrying...")
+		time.Sleep(1000 * time.Millisecond)
 	}
 
-	return err
+	return nbWrite, err
 }
 
 func (n Naomi) HOST_SetMode(v_and, v_or int) string {
 	f := []string{"I", "I"}
 	v := []interface{}{0x07000004, ((v_and << 8) | v_or)}
 
-	err := n.WritePacket(f, v, nil)
+	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -90,7 +114,7 @@ func (n Naomi) SECURITY_SetKeycode() {
 	f := []string{"I", "I", "I", "I", "I", "I", "I", "I", "I"}
 	v := []interface{}{0x7F000008, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
-	err := n.WritePacket(f, v, nil)
+	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -108,6 +132,19 @@ func (n Naomi) DIMM_UploadFile(filename string) {
 	}
 	defer file.Close()
 
+	// Get file size
+	fileInfo, _ := file.Stat()
+
+	progress := mpb.New(
+		mpb.WithWidth(60),
+		mpb.WithFormat("[=>-]"),
+		mpb.WithRefreshRate(180*time.Millisecond),
+	)
+	bar := progress.AddBar(fileInfo.Size(),
+		mpb.PrependDecorators(decor.Counters(decor.UnitKiB, "% 6.1f / % 6.1f")),
+		mpb.AppendDecorators(decor.Percentage()),
+	)
+	start := time.Now()
 	data := make([]byte, 0x8000)
 	for {
 		nb, err := file.ReadAt(data, int64(addr))
@@ -119,12 +156,14 @@ func (n Naomi) DIMM_UploadFile(filename string) {
 
 		crc = CRC32(crc, data[:nb])
 		addr += uint32(nb)
+		bar.IncrBy(nb, time.Since(start))
 	}
+
+	progress.Wait()
 
 	n.DIMM_Upload(addr, []byte("12345678"), 1)
 
 	crc = ^crc
-	log.Printf("CRC to send: %x\n", crc)
 	n.DIMM_SetInformation(crc, addr)
 }
 
@@ -132,7 +171,7 @@ func (n Naomi) DIMM_Upload(addr uint32, d []byte, mark int) {
 	f := []string{"I", "I", "I", "H"}
 	v := []interface{}{0x04800000 | (len(d) + 0xA) | (mark << 16), 0, int(addr), 0}
 
-	err := n.WritePacket(f, v, d)
+	_, err := n.WritePacket(f, v, d)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -145,7 +184,7 @@ func (n Naomi) DIMM_SetInformation(crc uint32, length uint32) {
 	log.Printf("Length=%08x\n", length)
 	log.Printf("CRC=%x\n", crc)
 
-	err := n.WritePacket(f, v, nil)
+	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -155,7 +194,7 @@ func (n Naomi) HOST_Restart() {
 	f := []string{"I"}
 	v := []interface{}{0x0A000000}
 
-	err := n.WritePacket(f, v, nil)
+	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -167,4 +206,17 @@ func (n Naomi) TIME_SetLimit(lim int) {
 
 	// Writing packet ignoring errors
 	n.WritePacket(f, v, nil)
+}
+
+func (n Naomi) NETFIRM_GetInformation() string {
+	f := []string{"I"}
+	v := []interface{}{0x1e000000}
+
+	n.WritePacket(f, v, nil)
+	ret, err := n.ReadSocket(0x404)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return string(ret)
 }

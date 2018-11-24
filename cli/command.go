@@ -16,9 +16,10 @@ const (
 )
 
 var (
-	ip       *string
-	port     *int
-	filename *string
+	ip           *string
+	port         *int
+	filename     *string
+	forceRestart *bool
 )
 
 func Process(appName, appDesc, appVersion string) {
@@ -47,6 +48,12 @@ func Process(appName, appDesc, appVersion string) {
 		EnvVar: "FILENAME",
 	})
 
+	forceRestart = app.Bool(cli.BoolOpt{
+		Name:   "force",
+		Desc:   "Try to force a restart if the current loaded game does not quit",
+		EnvVar: "FORCE_RESTART",
+	})
+
 	app.Action = execute
 	app.Run(os.Args)
 }
@@ -69,14 +76,22 @@ func execute() {
 		}
 		os.Exit(1)
 	}
-	/* End params checking */
+	// End params checking
 
 	fmt.Println("Welcome to GoNaomi")
 
 	naomi := core.NewNaomi(*ip, *port)
 	defer naomi.Close()
 
-	//phase1(&naomi)
+	if *forceRestart {
+		log.Println("Trying to force restart...")
+		naomi.HOST_Restart()
+	}
+
+	// Phase1 prepare for upload and reboot the board
+	phase1(&naomi)
+
+	// Phase2 and 3 upload and reboot the board onto the game
 	phase2(&naomi, *filename)
 	phase3(&naomi)
 }
@@ -92,7 +107,7 @@ func phase2(n *core.Naomi, filename string) {
 }
 
 func phase3(n *core.Naomi) {
-	//loop
+	// infinite loop
 	log.Println("Entering time limit hack loop...")
 	for {
 		n.TIME_SetLimit(10 * 60 * 1000)
