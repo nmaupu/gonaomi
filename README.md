@@ -20,6 +20,7 @@ Command line tool and server to run Sega Naomi games onto a NetDimm written in G
 The server mode runs a REST api ready to get requests.
 
 Available endpoints on the API:
+- `/health`: health of the server
 - `/list`: list all available games
 - `/load/<game_name>`: load a specific game
 

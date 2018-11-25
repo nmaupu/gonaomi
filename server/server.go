@@ -38,6 +38,7 @@ func Start(port int, naomiIp string, naomiPort int, romsPath string) {
 	router := mux.NewRouter()
 	router.HandleFunc("/load/{id}", Load).Methods("GET")
 	router.HandleFunc("/list", List).Methods("GET")
+	router.HandleFunc("/health", Health).Methods("GET")
 
 	log.Printf("Starting server listening on 0.0.0.0:%d", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), router))
@@ -132,4 +133,8 @@ func List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(games)
+}
+
+func Health(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode("UP")
 }
