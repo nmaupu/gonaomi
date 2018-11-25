@@ -1,6 +1,6 @@
 # GoNaomi
 
-Command line tool to run Sega Naomi games written in Go.
+Command line tool and server to run Sega Naomi games onto a NetDimm written in Go.
 
 # Usage
 
