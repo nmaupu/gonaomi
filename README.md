@@ -2,6 +2,8 @@
 
 Command line tool and server to run Sega Naomi games onto a NetDimm written in Go.
 
+![Sega Naomi](https://github.com/nmaupu/gonaomi/blob/master/doc/title.png)
+
 # Usage
 
 ## Standalone mode
