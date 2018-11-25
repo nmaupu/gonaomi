@@ -11,6 +11,7 @@ install:
 
 vendor:
 	glide install -v --strip-vcs
+	glide up
 
 build: vendor $(BIN) $(shell find . -name "*.go")
 	env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o $(BIN)/$(BIN_NAME) .

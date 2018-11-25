@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	CONNECT_TIMEOUT = 5
-	WRITE_TIMEOUT   = 10
+	CONNECT_TIMEOUT    = 5
+	READ_WRITE_TIMEOUT = 30
 )
 
 type Naomi struct {
-	Addr       string
-	Connection net.Conn
+	Addr        string
+	Connection  net.Conn
+	ProgressBar bool
 }
 
 func NewNaomi(addr string, port int) Naomi {
@@ -30,10 +31,11 @@ func NewNaomi(addr string, port int) Naomi {
 	log.Printf("Connecting to Naomi at %s...\n", n.Addr)
 	c, err := net.DialTimeout("tcp4", n.Addr, time.Duration(CONNECT_TIMEOUT*time.Second))
 	if err != nil || c == nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 
 	n.Connection = c
+	n.ProgressBar = true
 
 	log.Printf("Connected to %s\n", n.Addr)
 
@@ -51,10 +53,15 @@ func (n Naomi) IsUp() bool {
 	return err != nil
 }
 
+func (n Naomi) SetDeadline() {
+	n.Connection.SetDeadline(time.Now().Add(time.Second * READ_WRITE_TIMEOUT))
+}
+
 // Reads nb bytes from a given socket
 func (n Naomi) ReadSocket(nb int) (string, error) {
 	buf := make([]byte, nb)
 
+	n.SetDeadline()
 	nbRet, err := n.Connection.Read(buf)
 	if err != nil {
 		return "", err
@@ -78,16 +85,10 @@ func (n Naomi) WritePacket(format []string, values []interface{}, additionalData
 		data = append(data, additionalData...)
 	}
 
-	// Looping while timeout is not reached
-	err = nil
-	for i := 0; i < WRITE_TIMEOUT; i++ {
-		nbWrite, err = n.Connection.Write(data)
-		if err == nil {
-			break
-		}
-
-		log.Println("Retrying...")
-		time.Sleep(1000 * time.Millisecond)
+	n.SetDeadline()
+	nbWrite, err = n.Connection.Write(data)
+	if err != nil {
+		log.Println(err)
 	}
 
 	return nbWrite, err
@@ -99,12 +100,12 @@ func (n Naomi) HOST_SetMode(v_and, v_or int) string {
 
 	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 
 	ret, err := n.ReadSocket(0x8)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 
 	return ret
@@ -116,7 +117,7 @@ func (n Naomi) SECURITY_SetKeycode() {
 
 	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 }
 
@@ -128,24 +129,32 @@ func (n Naomi) DIMM_UploadFile(filename string) {
 
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 	defer file.Close()
 
 	// Get file size
 	fileInfo, _ := file.Stat()
 
-	progress := mpb.New(
-		mpb.WithWidth(60),
-		mpb.WithFormat("[=>-]"),
-		mpb.WithRefreshRate(180*time.Millisecond),
-	)
-	bar := progress.AddBar(fileInfo.Size(),
-		mpb.PrependDecorators(decor.Counters(decor.UnitKiB, "% 6.1f / % 6.1f")),
-		mpb.AppendDecorators(decor.Percentage()),
-	)
-	start := time.Now()
+	// Progress bar initialization
+	var progress *mpb.Progress
+	var bar *mpb.Bar
+	var start time.Time
+	if n.ProgressBar {
+		progress = mpb.New(
+			mpb.WithWidth(60),
+			mpb.WithFormat("[=>-]"),
+			mpb.WithRefreshRate(180*time.Millisecond),
+		)
+		bar = progress.AddBar(fileInfo.Size(),
+			mpb.PrependDecorators(decor.Counters(decor.UnitKiB, "% 6.1f / % 6.1f")),
+			mpb.AppendDecorators(decor.Percentage()),
+		)
+		start = time.Now()
+	}
+
 	data := make([]byte, 0x8000)
+	currentSent := int64(0)
 	for {
 		nb, err := file.ReadAt(data, int64(addr))
 		if err == io.EOF {
@@ -156,10 +165,19 @@ func (n Naomi) DIMM_UploadFile(filename string) {
 
 		crc = CRC32(crc, data[:nb])
 		addr += uint32(nb)
-		bar.IncrBy(nb, time.Since(start))
+
+		if n.ProgressBar {
+			bar.IncrBy(nb, time.Since(start))
+		} else {
+			currentSent += int64(nb)
+			percent := currentSent * 100 / fileInfo.Size()
+			log.Printf("Sending ... %d%%\n", percent)
+		}
 	}
 
-	progress.Wait()
+	if n.ProgressBar {
+		progress.Wait()
+	}
 
 	n.DIMM_Upload(addr, []byte("12345678"), 1)
 
@@ -173,7 +191,7 @@ func (n Naomi) DIMM_Upload(addr uint32, d []byte, mark int) {
 
 	_, err := n.WritePacket(f, v, d)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 }
 
@@ -186,7 +204,7 @@ func (n Naomi) DIMM_SetInformation(crc uint32, length uint32) {
 
 	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 }
 
@@ -196,7 +214,7 @@ func (n Naomi) HOST_Restart() {
 
 	_, err := n.WritePacket(f, v, nil)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 }
 
@@ -215,8 +233,22 @@ func (n Naomi) NETFIRM_GetInformation() string {
 	n.WritePacket(f, v, nil)
 	ret, err := n.ReadSocket(0x404)
 	if err != nil {
-		log.Fatalln(err)
+		log.Panicln(err)
 	}
 
 	return string(ret)
+}
+
+func (n Naomi) SendSingleFile(filename string) {
+	n.HOST_SetMode(0, 1)
+	n.SECURITY_SetKeycode()
+
+	n.DIMM_UploadFile(filename)
+	n.HOST_Restart()
+
+	log.Println("Entering time limit hack loop...")
+	for {
+		n.TIME_SetLimit(10 * 60 * 1000)
+		time.Sleep(5000 * time.Millisecond)
+	}
 }

@@ -5,21 +5,19 @@ import (
 	"fmt"
 	"github.com/jawher/mow.cli"
 	"github.com/nmaupu/gonaomi/core"
+	"github.com/nmaupu/gonaomi/server"
 	"log"
 	"os"
 	"syscall"
-	"time"
 )
 
 const (
-	NAOMI_PORT = 10703
+	NAOMI_DEFAULT_PORT = 10703
 )
 
 var (
-	ip           *string
-	port         *int
-	filename     *string
-	forceRestart *bool
+	ip   *string
+	port *int
 )
 
 func Process(appName, appDesc, appVersion string) {
@@ -38,79 +36,60 @@ func Process(appName, appDesc, appVersion string) {
 	port = app.Int(cli.IntOpt{
 		Name:   "p port",
 		Desc:   "Port of the Naomi board",
-		EnvVar: "NAOMI_PORT",
-		Value:  NAOMI_PORT,
+		EnvVar: "NAOMI_DEFAULT_PORT",
+		Value:  NAOMI_DEFAULT_PORT,
 	})
 
-	filename = app.String(cli.StringOpt{
-		Name:   "f file",
-		Desc:   "File to load onto the Naomi board",
-		EnvVar: "FILENAME",
-	})
+	app.Command("send", "Send a single file to the Naomi board", sendMode)
+	app.Command("server", "Start in server mode, ready to accept request", serverMode)
 
-	forceRestart = app.Bool(cli.BoolOpt{
-		Name:   "force",
-		Desc:   "Try to force a restart if the current loaded game does not quit",
-		EnvVar: "FORCE_RESTART",
-	})
-
-	app.Action = execute
 	app.Run(os.Args)
 }
 
-func execute() {
-	var msgs []string
-	if *ip == "" {
-		msgs = append(msgs, "IP address must be specified")
-	}
+func sendMode(cmd *cli.Cmd) {
+	forceRestart := cmd.Bool(cli.BoolOpt{
+		Name:   "force",
+		Value:  false,
+		Desc:   "Force restart of the Naomi board before proceeding",
+		EnvVar: "FORCE_RESTART",
+	})
 
-	if *filename == "" {
-		msgs = append(msgs, "Filename must be specified")
-	}
+	filename := cmd.String(cli.StringOpt{
+		Name:   "f filename",
+		Value:  "",
+		Desc:   "Filename to load onto the Naomi board",
+		EnvVar: "FILENAME",
+	})
 
-	// Print all parameters' error and exist if need be
-	if len(msgs) > 0 {
-		fmt.Fprintf(os.Stderr, "The following error(s) occured:\n")
-		for _, m := range msgs {
-			fmt.Fprintf(os.Stderr, "  - %s\n", m)
+	cmd.Action = func() {
+		naomi := core.NewNaomi(*ip, *port)
+		defer naomi.Close()
+
+		if *forceRestart {
+			log.Println("Trying to force restart...")
+			naomi.HOST_Restart()
 		}
-		os.Exit(1)
+
+		naomi.SendSingleFile(*filename)
 	}
-	// End params checking
-
-	fmt.Println("Welcome to GoNaomi")
-
-	naomi := core.NewNaomi(*ip, *port)
-	defer naomi.Close()
-
-	if *forceRestart {
-		log.Println("Trying to force restart...")
-		naomi.HOST_Restart()
-	}
-
-	// Phase1 prepare for upload and reboot the board
-	phase1(&naomi)
-
-	// Phase2 and 3 upload and reboot the board onto the game
-	phase2(&naomi, *filename)
-	phase3(&naomi)
 }
 
-func phase1(n *core.Naomi) {
-	n.HOST_SetMode(0, 1)
-	n.SECURITY_SetKeycode()
-}
+func serverMode(cmd *cli.Cmd) {
+	listenPort := cmd.Int(cli.IntOpt{
+		Name:   "listen-port l",
+		Value:  8080,
+		Desc:   "Server port to listen from",
+		EnvVar: "LISTEN_PORT",
+	})
 
-func phase2(n *core.Naomi, filename string) {
-	n.DIMM_UploadFile(filename)
-	n.HOST_Restart()
-}
+	romsPath := cmd.String(cli.StringOpt{
+		Name:   "roms-path r",
+		Value:  "/tmp",
+		Desc:   "Path containing roms",
+		EnvVar: "ROMS_PATH",
+	})
 
-func phase3(n *core.Naomi) {
-	// infinite loop
-	log.Println("Entering time limit hack loop...")
-	for {
-		n.TIME_SetLimit(10 * 60 * 1000)
-		time.Sleep(5000 * time.Millisecond)
+	cmd.Action = func() {
+		server.Start(*listenPort, *ip, *port, *romsPath)
 	}
 }

@@ -1,0 +1,44 @@
+hash: 000b3ffb483e34660e9f34a91b32e5f0ef4643daef1899ea089c3df98e9ca53c
+updated: 2018-11-25T00:55:13.14939+01:00
+imports:
+- name: github.com/gorilla/context
+  version: 51ce91d2eaddeca0ef29a71d766bb3634dadf729
+- name: github.com/gorilla/mux
+  version: e3702bed27f0d39777b0b37b664b6280e8ef8fbf
+- name: github.com/jawher/mow.cli
+  version: 2f22195f169da29d54624afd9eb83ada5c9e4ee9
+  subpackages:
+  - internal/container
+  - internal/flow
+  - internal/fsm
+  - internal/lexer
+  - internal/matcher
+  - internal/parser
+  - internal/values
+- name: github.com/mattn/go-isatty
+  version: 3fb116b820352b7f0c281308a4d6250c22d94e27
+- name: github.com/roman-kachanovsky/go-binary-pack
+  version: e260e0dc6732c539c89b612581dadd192f0be4ed
+  subpackages:
+  - binary-pack
+- name: github.com/vbauerster/mpb
+  version: b89b6c9ce4c35decc74d18628a5def8299d6c41f
+  subpackages:
+  - cwriter
+  - decor
+  - internal
+- name: github.com/VividCortex/ewma
+  version: 43880d236f695d39c62cf7aa4ebd4508c258e6c0
+- name: golang.org/x/crypto
+  version: d172538b2cfce0c13cee31e647d0367aa8cd2486
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/sync
+  version: 42b317875d0fa942474b76e1b46a6060d720ae6e
+  subpackages:
+  - semaphore
+- name: golang.org/x/sys
+  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  subpackages:
+  - unix
+testImports: []
