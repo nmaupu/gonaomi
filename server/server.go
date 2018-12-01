@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nmaupu/gonaomi/core"
 	"golang.org/x/sync/semaphore"
+	"html/template"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -39,6 +40,7 @@ func Start(port int, naomiIp string, naomiPort int, romsPath string) {
 	router.HandleFunc("/load/{id}", Load).Methods("GET")
 	router.HandleFunc("/list", List).Methods("GET")
 	router.HandleFunc("/health", Health).Methods("GET")
+	router.HandleFunc("/ui", Ui).Methods("GET")
 
 	log.Printf("Starting server listening on 0.0.0.0:%d", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), router))
@@ -116,13 +118,13 @@ func Load(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(game)
 }
 
-func List(w http.ResponseWriter, r *http.Request) {
+func getGamesList() []string {
 	var games []string
 
 	matches, err := filepath.Glob(filepath.Join(rPath, "*.bin"))
 	if err != nil {
-		json.NewEncoder(w).Encode(err.Error())
-		return
+		log.Println(err)
+		return nil
 	}
 
 	for _, m := range matches {
@@ -132,9 +134,54 @@ func List(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	json.NewEncoder(w).Encode(games)
+	return games
+}
+
+func List(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(getGamesList())
 }
 
 func Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode("UP")
+}
+
+func Ui(w http.ResponseWriter, r *http.Request) {
+	const tpl = `
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>{{ .Title }}</title>
+	</head>
+	<body>
+		<h1>{{ .Title }}</h1>
+		<ul>
+		{{- range .Items }}
+		<li><a href="/load/{{ . }}">{{ . }}</a></li>
+		{{- else }}
+		<li><strong>No game to display</strong></li>
+		{{- end }}
+		</ul>
+	</body>
+</html>`
+
+	check := func(err error) {
+		if err != nil {
+			json.NewEncoder(w).Encode(err.Error())
+		}
+	}
+
+	t, err := template.New("webpage").Parse(tpl)
+	check(err)
+
+	data := struct {
+		Title string
+		Items []string
+	}{
+		Title: "Naomi games' list",
+		Items: getGamesList(),
+	}
+
+	err = t.Execute(w, data)
+	check(err)
 }
